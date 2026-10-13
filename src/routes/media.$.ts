@@ -24,9 +24,16 @@ export const Route = createFileRoute("/media/$")({
           const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
           const { data, error } = await supabaseAdmin.storage.from("site-media").download(path);
           if (error || !data) return new Response("Not found", { status: 404 });
-          return new Response(data, {
+
+          const arrayBuf = await data.arrayBuffer();
+          const buffer = Buffer.from(arrayBuf);
+          const contentType = data.type || "application/octet-stream";
+
+          inMemoryMedia.set(path, { buffer, type: contentType });
+
+          return new Response(buffer, {
             headers: {
-              "content-type": data.type || "application/octet-stream",
+              "content-type": contentType,
               "cache-control": "public, max-age=31536000, immutable",
               "x-content-type-options": "nosniff",
             },

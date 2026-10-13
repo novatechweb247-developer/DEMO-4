@@ -32,50 +32,17 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
   };
 }
 
-function createMockAdminClient() {
-  console.warn("[Supabase Server] Missing environment variables — using mock admin client");
-  const mockAuth = {
-    getSession: async () => ({ data: { session: null }, error: null }),
-    getUser: async () => ({ data: { user: null }, error: null }),
-  };
-  const mockQuery = {
-    select: () => mockQuery,
-    eq: () => mockQuery,
-    neq: () => mockQuery,
-    order: () => mockQuery,
-    limit: () => mockQuery,
-    range: () => mockQuery,
-    single: async () => ({ data: null, error: null }),
-    maybeSingle: async () => ({ data: null, error: null }),
-    upsert: async () => ({ data: null, error: null }),
-    insert: async () => ({ data: null, error: null }),
-    update: async () => ({ data: null, error: null }),
-    delete: async () => ({ data: null, error: null }),
-    then: (resolve: (v: unknown) => unknown) =>
-      Promise.resolve({ data: [], error: null }).then(resolve),
-  };
-  return new Proxy({} as ReturnType<typeof createClient<Database>>, {
-    get(_, prop) {
-      if (prop === "auth") return mockAuth;
-      if (prop === "from") return () => mockQuery;
-      if (prop === "storage")
-        return {
-          from: () => ({
-            download: async () => ({ data: null, error: new Error("Storage not configured") }),
-            upload: async () => ({ data: null, error: new Error("Storage not configured") }),
-          }),
-        };
-      return () => mockQuery;
-    },
-  });
-}
-
 function createSupabaseAdminClient() {
   const SUPABASE_URL = process.env["SUPABASE_URL"] || process.env["VITE_SUPABASE_URL"];
   const SUPABASE_SERVICE_ROLE_KEY = process.env["SUPABASE_SERVICE_ROLE_KEY"];
 
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-    return createMockAdminClient();
+    const missing: string[] = [];
+    if (!SUPABASE_URL) missing.push("SUPABASE_URL");
+    if (!SUPABASE_SERVICE_ROLE_KEY) missing.push("SUPABASE_SERVICE_ROLE_KEY");
+    const errorMsg = `Supabase server client not configured: missing ${missing.join(", ")}. Please configure required environment variables.`;
+    console.error(`[Supabase Server] ${errorMsg}`);
+    throw new Error(errorMsg);
   }
 
   return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {

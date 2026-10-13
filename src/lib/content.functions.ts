@@ -47,8 +47,8 @@ export const adminSaveDraft = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertAdminKey(data.key);
     const clean = mergeContent(data.content);
-    await writeRow("draft", clean);
-    return { ok: true, savedAt: new Date().toISOString() };
+    const saved = await writeRow("draft", clean);
+    return { ok: true, savedAt: saved.updated_at, content: clean };
   });
 
 export const adminPublish = createServerFn({ method: "POST" })
@@ -57,8 +57,8 @@ export const adminPublish = createServerFn({ method: "POST" })
     assertAdminKey(data.key);
     const clean = mergeContent(data.content);
     await writeRow("draft", clean);
-    await writeRow("published", clean);
-    return { ok: true, publishedAt: new Date().toISOString() };
+    const published = await writeRow("published", clean);
+    return { ok: true, publishedAt: published.updated_at, content: clean };
   });
 
 const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
@@ -79,20 +79,30 @@ export const adminUpload = createServerFn({ method: "POST" })
       .replace(/[^a-z0-9]/g, "")
       .slice(0, 5);
     const path = `uploads/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+
+    const hasConfig =
+      (process.env["SUPABASE_URL"] || process.env["VITE_SUPABASE_URL"]) &&
+      process.env["SUPABASE_SERVICE_ROLE_KEY"];
+
+    if (!hasConfig) {
+      throw new Error(
+        "Supabase Storage is not configured. Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY.",
+      );
+    }
+
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from("site-media")
+      .upload(path, bytes, { contentType: data.type, upsert: true });
+
+    if (uploadError) {
+      console.error("[Media Upload] Supabase storage upload failed:", uploadError.message);
+      throw new Error(`Failed to upload media to Supabase storage: ${uploadError.message}`);
+    }
+
+    // Cache in memory for fast serving
     const { inMemoryMedia } = await import("./content.server");
     inMemoryMedia.set(path, { buffer: bytes, type: data.type });
-    try {
-      const hasConfig =
-        (process.env["SUPABASE_URL"] || process.env["VITE_SUPABASE_URL"]) &&
-        process.env["SUPABASE_SERVICE_ROLE_KEY"];
-      if (hasConfig) {
-        const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-        await supabaseAdmin.storage
-          .from("site-media")
-          .upload(path, bytes, { contentType: data.type, upsert: false });
-      }
-    } catch (e) {
-      console.warn("[Media Upload] Supabase storage upload failed, stored in memory", e);
-    }
+
     return { path };
   });

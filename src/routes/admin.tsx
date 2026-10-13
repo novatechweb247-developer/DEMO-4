@@ -87,8 +87,8 @@ function AdminPage() {
       await verify({ data: { key: input } });
       sessionStorage.setItem(ADMIN_KEY_STORAGE, input);
       await load(input);
-    } catch {
-      toast.error("That access key is not valid.");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "That access key is not valid.");
     } finally {
       setBusy(false);
     }
@@ -98,10 +98,25 @@ function AdminPage() {
     if (!key || !content) return;
     setBusy(true);
     try {
-      if (kind === "save") await save({ data: { key, content } });
-      else await publish({ data: { key, content } });
-      setDirty(false);
-      toast.success(kind === "save" ? "Draft saved." : "Published — the live site is updated.");
+      if (kind === "save") {
+        await save({ data: { key, content } });
+        // Reload saved draft from Supabase to verify persistence
+        const reloaded = await getDraft({ data: { key } });
+        if (reloaded?.content) {
+          setContent(reloaded.content);
+        }
+        setDirty(false);
+        toast.success("Draft saved.");
+      } else {
+        await publish({ data: { key, content } });
+        // Reload saved state to confirm live site updates
+        const reloaded = await getDraft({ data: { key } });
+        if (reloaded?.content) {
+          setContent(reloaded.content);
+        }
+        setDirty(false);
+        toast.success("Published — the live site is updated.");
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "Something went wrong.");
     } finally {
