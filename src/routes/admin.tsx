@@ -2,20 +2,13 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Plus, Trash2, Upload, ExternalLink, LogOut } from "lucide-react";
+import { Plus, Trash2, Upload, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Toaster } from "@/components/ui/sonner";
-import {
-  adminGetDraft,
-  adminPublish,
-  adminSaveDraft,
-  adminUpload,
-  adminVerify,
-} from "@/lib/content.functions";
-import { ADMIN_KEY_STORAGE } from "@/lib/site-content-context";
+import { adminGetDraft, adminPublish, adminSaveDraft, adminUpload } from "@/lib/content.functions";
 import { imageUrl, type SiteContent } from "@/content/site";
 
 export const Route = createFileRoute("/admin")({
@@ -57,60 +50,48 @@ const isLong = (k: string, v: string) =>
 const human = (k: string) => k.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
 
 function AdminPage() {
-  const [key, setKey] = useState<string | null>(null);
-  const [input, setInput] = useState("");
   const [content, setContent] = useState<SiteContent | null>(null);
+  const [loading, setLoading] = useState(true);
   const [section, setSection] = useState<keyof SiteContent>("brand");
   const [busy, setBusy] = useState(false);
   const [dirty, setDirty] = useState(false);
-  const verify = useServerFn(adminVerify);
   const getDraft = useServerFn(adminGetDraft);
   const save = useServerFn(adminSaveDraft);
   const publish = useServerFn(adminPublish);
 
-  const load = async (k: string) => {
-    const r = await getDraft({ data: { key: k } });
-    setContent(r.content);
-    setKey(k);
-  };
-
-  useEffect(() => {
-    const k = sessionStorage.getItem(ADMIN_KEY_STORAGE);
-    if (k) load(k).catch(() => sessionStorage.removeItem(ADMIN_KEY_STORAGE));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  const signIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setBusy(true);
+  const load = async () => {
     try {
-      await verify({ data: { key: input } });
-      sessionStorage.setItem(ADMIN_KEY_STORAGE, input);
-      await load(input);
+      const r = await getDraft();
+      setContent(r.content);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "That access key is not valid.");
+      toast.error(e instanceof Error ? e.message : "Failed to load site content.");
     } finally {
-      setBusy(false);
+      setLoading(false);
     }
   };
 
+  useEffect(() => {
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const run = async (kind: "save" | "publish") => {
-    if (!key || !content) return;
+    if (!content) return;
     setBusy(true);
     try {
       if (kind === "save") {
-        await save({ data: { key, content } });
+        await save({ data: { content } });
         // Reload saved draft from Supabase to verify persistence
-        const reloaded = await getDraft({ data: { key } });
+        const reloaded = await getDraft();
         if (reloaded?.content) {
           setContent(reloaded.content);
         }
         setDirty(false);
         toast.success("Draft saved.");
       } else {
-        await publish({ data: { key, content } });
+        await publish({ data: { content } });
         // Reload saved state to confirm live site updates
-        const reloaded = await getDraft({ data: { key } });
+        const reloaded = await getDraft();
         if (reloaded?.content) {
           setContent(reloaded.content);
         }
@@ -124,33 +105,14 @@ function AdminPage() {
     }
   };
 
-  if (!key || !content) {
+  if (loading || !content) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-secondary px-4">
         <Toaster />
-        <form
-          onSubmit={signIn}
-          className="w-full max-w-sm space-y-5 rounded-md border bg-background p-8"
-        >
-          <div>
-            <p className="eyebrow">ADMIN CENTER</p>
-            <h1 className="mt-2 font-serif text-3xl">Sign in</h1>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="key">Access key</Label>
-            <Input
-              id="key"
-              type="password"
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              required
-              autoComplete="current-password"
-            />
-          </div>
-          <Button type="submit" className="w-full" disabled={busy}>
-            {busy ? "Checking…" : "Enter"}
-          </Button>
-        </form>
+        <div className="text-center space-y-2">
+          <p className="eyebrow">ADMIN CENTER</p>
+          <p className="font-serif text-xl">Loading site editor…</p>
+        </div>
       </main>
     );
   }
@@ -181,18 +143,6 @@ function AdminPage() {
             <Button size="sm" disabled={busy} onClick={() => run("publish")}>
               Publish
             </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-label="Sign out"
-              onClick={() => {
-                sessionStorage.removeItem(ADMIN_KEY_STORAGE);
-                setKey(null);
-                setContent(null);
-              }}
-            >
-              <LogOut />
-            </Button>
           </div>
         </div>
       </header>
@@ -215,7 +165,6 @@ function AdminPage() {
           <FieldEditor
             value={content[section]}
             onChange={update}
-            adminKey={key}
             fixedLength={section === "heroSlides"}
             path={String(section)}
           />
@@ -228,13 +177,11 @@ function AdminPage() {
 function FieldEditor({
   value,
   onChange,
-  adminKey,
   fixedLength,
   path,
 }: {
   value: unknown;
   onChange: (v: unknown) => void;
-  adminKey: string;
   fixedLength?: boolean;
   path: string;
 }) {
@@ -259,7 +206,6 @@ function FieldEditor({
             </div>
             <FieldEditor
               value={item}
-              adminKey={adminKey}
               path={`${path}.${i}`}
               onChange={(v) => onChange(value.map((x, j) => (j === i ? v : x)))}
             />
@@ -285,16 +231,7 @@ function FieldEditor({
           const set = (nv: unknown) => onChange({ ...obj, [k]: nv });
           if (typeof v === "string") {
             if (isImageKey(k))
-              return (
-                <ImageField
-                  key={k}
-                  id={id}
-                  label={human(k)}
-                  value={v}
-                  onChange={set}
-                  adminKey={adminKey}
-                />
-              );
+              return <ImageField key={k} id={id} label={human(k)} value={v} onChange={set} />;
             return (
               <div key={k} className="space-y-2">
                 <Label htmlFor={id}>{human(k)}</Label>
@@ -309,7 +246,7 @@ function FieldEditor({
           return (
             <fieldset key={k} className="space-y-3 border-t pt-5">
               <legend className="text-sm font-semibold">{human(k)}</legend>
-              <FieldEditor value={v} onChange={set} adminKey={adminKey} path={id} />
+              <FieldEditor value={v} onChange={set} path={id} />
             </fieldset>
           );
         })}
@@ -324,13 +261,11 @@ function ImageField({
   label,
   value,
   onChange,
-  adminKey,
 }: {
   id: string;
   label: string;
   value: string;
   onChange: (v: string) => void;
-  adminKey: string;
 }) {
   const upload = useServerFn(adminUpload);
   const [busy, setBusy] = useState(false);
@@ -347,7 +282,7 @@ function ImageField({
       for (let i = 0; i < buf.length; i += 0x8000)
         bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
       const r = await upload({
-        data: { key: adminKey, name: file.name, type: file.type, base64: btoa(bin) },
+        data: { name: file.name, type: file.type, base64: btoa(bin) },
       });
       onChange(r.path);
       toast.success("Image uploaded. Save or publish to keep it.");

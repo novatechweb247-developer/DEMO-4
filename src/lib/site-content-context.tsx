@@ -15,9 +15,7 @@ export function SiteContentProvider({ children }: { children: ReactNode }) {
   const getDraft = useServerFn(adminGetDraft);
   useEffect(() => {
     if (new URLSearchParams(window.location.search).get("preview") !== "draft") return;
-    const key = sessionStorage.getItem(ADMIN_KEY_STORAGE);
-    if (!key) return;
-    getDraft({ data: { key } })
+    getDraft()
       .then((r) => setDraft(r.content))
       .catch(() => undefined);
   }, [getDraft]);

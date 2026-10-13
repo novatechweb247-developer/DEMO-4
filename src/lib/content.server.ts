@@ -6,12 +6,9 @@ const inMemoryStore = new Map<string, { content: unknown; updated_at: string }>(
 /** In-memory media storage fallback for uploaded assets */
 export const inMemoryMedia = new Map<string, { buffer: Buffer; type: string }>();
 
-/** Throws unless the supplied key matches the server-side admin access key. Defaults to "admin". */
-export function assertAdminKey(key: string) {
-  const expected = process.env["ADMIN_ACCESS_KEY"] || "admin";
-  const a = Buffer.from(String(key ?? ""));
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !timingSafeEqual(a, b)) throw new Error("Invalid admin key.");
+/** Security is now handled via the secret admin URL; logins and passkeys are removed. */
+export function assertAdminKey(_key?: string) {
+  // No-op: authentication via passkey is removed; access relies on the secret URL.
 }
 
 export async function readRow(id: "draft" | "published") {

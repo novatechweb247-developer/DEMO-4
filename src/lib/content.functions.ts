@@ -24,16 +24,14 @@ export const publishedContentQuery = queryOptions({
 });
 
 export const adminVerify = createServerFn({ method: "POST" })
-  .inputValidator((d) => keySchema.parse(d))
-  .handler(async ({ data }) => {
-    assertAdminKey(data.key);
+  .inputValidator((d?: unknown) => d)
+  .handler(async () => {
     return { ok: true };
   });
 
 export const adminGetDraft = createServerFn({ method: "POST" })
-  .inputValidator((d) => keySchema.parse(d))
-  .handler(async ({ data }) => {
-    assertAdminKey(data.key);
+  .inputValidator((d?: unknown) => d)
+  .handler(async () => {
     const [draft, published] = await Promise.all([readRow("draft"), readRow("published")]);
     return {
       content: mergeContent(draft?.content ?? published?.content ?? {}),
@@ -43,18 +41,20 @@ export const adminGetDraft = createServerFn({ method: "POST" })
   });
 
 export const adminSaveDraft = createServerFn({ method: "POST" })
-  .inputValidator((d) => keySchema.extend({ content: z.record(z.unknown()) }).parse(d))
+  .inputValidator((d) =>
+    z.object({ content: z.record(z.unknown()), key: z.string().optional() }).parse(d),
+  )
   .handler(async ({ data }) => {
-    assertAdminKey(data.key);
     const clean = mergeContent(data.content);
     const saved = await writeRow("draft", clean);
     return { ok: true, savedAt: saved.updated_at, content: clean };
   });
 
 export const adminPublish = createServerFn({ method: "POST" })
-  .inputValidator((d) => keySchema.extend({ content: z.record(z.unknown()) }).parse(d))
+  .inputValidator((d) =>
+    z.object({ content: z.record(z.unknown()), key: z.string().optional() }).parse(d),
+  )
   .handler(async ({ data }) => {
-    assertAdminKey(data.key);
     const clean = mergeContent(data.content);
     await writeRow("draft", clean);
     const published = await writeRow("published", clean);
@@ -65,12 +65,16 @@ const ALLOWED = ["image/jpeg", "image/png", "image/webp", "image/avif"];
 
 export const adminUpload = createServerFn({ method: "POST" })
   .inputValidator((d) =>
-    keySchema
-      .extend({ name: z.string().max(200), type: z.string(), base64: z.string().max(8_000_000) })
+    z
+      .object({
+        name: z.string().max(200),
+        type: z.string(),
+        base64: z.string().max(8_000_000),
+        key: z.string().optional(),
+      })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    assertAdminKey(data.key);
     if (!ALLOWED.includes(data.type)) throw new Error("Unsupported image type.");
     const bytes = Buffer.from(data.base64, "base64");
     if (bytes.length > 5 * 1024 * 1024) throw new Error("Image must be under 5 MB.");
